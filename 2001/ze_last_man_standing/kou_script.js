@@ -1595,6 +1595,100 @@ class HpLimiterSystem extends BaseSystem {
     restoreState(data) { if(data) { this.active = data.active; this.limit = data.limit; } }
 }
 
+
+// 天选系统
+class LastManStandingSystem extends BaseSystem {
+    constructor(controller) {
+        super(controller);
+        this.pendingExecution = false;
+        this.executeTimer = 0;
+        this.selectedPlayerPawn = null;
+
+        Instance.OnScriptInput("LastManStanding", () => this.triggerSequence());
+        Instance.OnScriptInput("ExecuteLastManEvents", () => this.executeEvents());
+    }
+
+    triggerSequence() {
+        if (this.pendingExecution) return;  // 防抖
+
+        const ctPawns = [];
+        for (let i = 0; i < 64; i++) {
+            const c = Instance.GetPlayerController(i);
+            if (c && c.IsConnected()) {
+                const p = c.GetPlayerPawn();
+                if (p && p.IsValid() && p.IsAlive() && p.GetTeamNumber() === 3) {
+                    ctPawns.push(p);
+                }
+            }
+        }
+
+        if (ctPawns.length === 0) return;
+
+        utils.shuffle(ctPawns);  // 打乱数组
+
+         // 双重随机
+        const timeEntropy = Math.floor(Instance.GetGameTime() * 1000);
+        const randomBase = utils.GetRandomIntBetween(0, ctPawns.length - 1);
+        const finalIndex = (randomBase + timeEntropy) % ctPawns.length;
+        
+        this.selectedPlayerPawn = ctPawns[finalIndex];
+        
+        if (this.selectedPlayerPawn && this.selectedPlayerPawn.IsValid()) {
+            this.selectedPlayerPawn.SetEntityName("last_man_standing");
+            this.pendingExecution = true;
+            this.executeTimer = 0.1; 
+        }
+    }
+
+    update(dt, validPlayers) {
+        if (this.pendingExecution) {
+            this.executeTimer -= dt;
+            if (this.executeTimer <= 0) {
+                this.executeEvents();
+                this.pendingExecution = false;
+            }
+        }
+    }
+
+    executeEvents() {
+        if (!this.selectedPlayerPawn || !this.selectedPlayerPawn.IsValid()) return;
+        
+        // 事件
+        utils.EntFire("last_man_standing", "Alpha", "255");
+        utils.EntFire("last_man_standing", "Color", "255 255 255");
+        utils.EntFire("last_man_standing", "SetDamageFilter", "");
+        utils.EntFire("last_man_standing", "KeyValues", "gravity 1");
+        utils.EntFire("last_man_standing", "KeyValues", "max_health 100");
+        utils.EntFire("last_man_standing", "KeyValues", "health 100");
+
+        utils.EntFire("v_button1", "Kill");
+        utils.EntFire("v_model1", "Fireuser3", "", 0.04);
+
+        utils.EntFire("wpn_jugger_phys", "Break");
+        utils.EntFire("wpn_jugger_ui", "Kill");
+        utils.EntFire("wpn_jugger*", "Kill", "", 0.04);
+        utils.EntFire("Human_Item_Mech_Dead", "Trigger");
+
+        utils.EntFire("Zombie_Item_Summoner_Slow_Trigger", "Kill");
+        utils.EntFire("Zombie_Item_Summoner_Teleport*", "Kill");
+        utils.EntFire("player", "SetDamageFilter", "", 0.04);
+
+        utils.EntFire("mechcammm", "Disable", "", 0.1);
+        utils.EntFire("stage5_goaway", "FireUser1", "", 0.2);
+        utils.EntFire("lms_fuckoffzombies", "Enable", "", 0.2);
+        utils.EntFire("stage_5_last_man_trigger", "Enable", "", 0.2);
+        utils.EntFire("teleport_lastmanstanding", "Enable", "", 0.3);
+        utils.EntFire("lms_fuckoffzombies", "Disable", "", 0.5);
+        utils.EntFire("teleport_lastmanstanding", "Disable", "", 0.5);
+        utils.EntFire("stage_5_last_man_trigger", "Kill", "", 2.2);
+        
+        this.selectedPlayerPawn = null;
+    }
+
+    saveState() { return { pendingExecution: this.pendingExecution }; }
+    restoreState(data) { if(data) this.pendingExecution = data.pendingExecution; }
+}
+
 // 主控
 class GameSystemController {
     constructor() {
@@ -1614,6 +1708,7 @@ class GameSystemController {
         this.subsystems.set("boss_hp", new BossHpSystem(this));
         this.subsystems.set("language", new LanguageManager(this));
         this.subsystems.set("hp_limiter", new HpLimiterSystem(this));
+        this.subsystems.set("last_man", new LastManStandingSystem(this));
     }
 
     registerGlobalCommands() {
